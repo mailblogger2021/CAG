@@ -1,0 +1,88 @@
+name: CAG and RAG Experiment Automation
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  run-experiments:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout Your Repository
+    - name: Checkout Current Repository
+      uses: actions/checkout@v3
+
+    # Set Up Python Environment
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    # Install Dependencies
+    - name: Install Dependencies
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # Download Required Datasets
+    - name: Download Datasets
+      run: |
+        sh ./downloads.sh
+
+    # Set Up Environment Variables
+    - name: Set Environment Variables
+      run: |
+        echo "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" >> $GITHUB_ENV
+        echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+        echo "HF_TOKEN=${{ secrets.HF_TOKEN }}" >> $GITHUB_ENV
+
+    # Run CAG Experiment
+    - name: Run CAG Experiment
+      env:
+        GOOGLE_API_KEY: ${{ env.GOOGLE_API_KEY }}
+        OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
+        HF_TOKEN: ${{ env.HF_TOKEN }}
+      run: |
+        python ./kvcache.py \
+          --kvcache file \
+          --dataset "squad-train" \
+          --similarity bertscore \
+          --maxKnowledge 5 \
+          --maxParagraph 100 \
+          --maxQuestion 1000 \
+          --modelname "meta-llama/Llama-3.1-8B-Instruct" \
+          --randomSeed 0 \
+          --output "./result_kvcache.txt"
+
+    # Run RAG Experiment
+    - name: Run RAG Experiment
+      env:
+        GOOGLE_API_KEY: ${{ env.GOOGLE_API_KEY }}
+        OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
+        HF_TOKEN: ${{ env.HF_TOKEN }}
+      run: |
+        python ./rag.py \
+          --index "bm25" \
+          --dataset "hotpotqa-train" \
+          --similarity bertscore \
+          --maxKnowledge 80 \
+          --maxParagraph 100 \
+          --maxQuestion 80 \
+          --topk 3 \
+          --modelname "meta-llama/Llama-3.1-8B-Instruct" \
+          --randomSeed 0 \
+          --output "./rag_results.txt"
+
+    # Save Results
+    - name: Upload Results
+      uses: actions/upload-artifact@v3
+      with:
+        name: experiment-results
+        path: |
+          result_kvcache.txt
+          rag_results.txt
